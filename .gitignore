@@ -1,3 +1,5 @@
+.idea
+AllPrintings.sqlite
 output_log*.txt
 Player*.log
 sample_logs/
