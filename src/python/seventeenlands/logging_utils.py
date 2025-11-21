@@ -5,7 +5,7 @@ import os
 _LOG_FOLDER = os.path.join(os.path.expanduser("~"), ".seventeenlands")
 if not os.path.exists(_LOG_FOLDER):
     os.makedirs(_LOG_FOLDER)
-_LOG_FILENAME = os.path.join(_LOG_FOLDER, "seventeenlands.log")
+_LOG_FILENAME = os.path.join(_LOG_FOLDER, "fake_seventeenlands.log")
 
 _LOG_FORMATTER = logging.Formatter(
     "%(asctime)s.%(msecs)03d,%(levelname)s,%(name)s,%(message)s",
