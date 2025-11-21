@@ -273,6 +273,7 @@ class Follower:
         self.game_service_metadata = None
         self.game_client_metadata = None
         self.objects_by_owner: defaultdict[Any, dict[Any, Any]] = defaultdict(dict)
+        self.objects_by_opponent: defaultdict[Any, dict[Any, Any]] = defaultdict(dict)
         self.opening_hand_count_by_seat: defaultdict[Any, int] = defaultdict(int)
         self.opening_hand: defaultdict[Any, list[Any]] = defaultdict(list)
         self.drawn_hands: defaultdict[Any, list[Any]] = defaultdict(list)
@@ -781,6 +782,9 @@ class Follower:
                     card_id = game_object["overlayGrpId"]
 
                     self.objects_by_owner[owner][instance_id] = card_id
+                    if owner == 2:
+                        logger.info(f"{self.objects_by_owner[owner].values()}")
+                    
 
                 for zone in game_state_message.get("zones", []):
                     if zone["type"] == "ZoneType_Hand":
