@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Decks - AMD{% endblock %}
+{% block content %}
+<section>
+    <form hx-post="/add/untapped-decks">
+        <input type="text" name="html_doc" placeholder="HTML doc text">
+        <button type="submit">Add Decks</button>
+    </form>
+</section>
+<section>
+    <ul>
+        {% for deck in decks %}
+        <li>{{ deck.name }}</li>
+        {% endfor %}
+    </ul>
+</section>
+{% endblock %}
