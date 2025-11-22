@@ -1,11 +1,12 @@
 import sqlite3
+from collections import defaultdict, namedtuple
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, DefaultDict
 
 from pydantic import BaseModel, Field
 
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, Form
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -142,14 +143,125 @@ async def read_item(request: Request):
         request=request, name="base.html"
     )
 
-# @app.get("/")
-# def root():
-#     return {"Hello": "World"}
 
+
+@app.post("/todos", response_class=HTMLResponse)
+async def create_todo(request: Request, todo: Annotated[str, Form()]):
+    print(todo)
+
+@app.get("/untapped", response_class=HTMLResponse)
+async def untapped(request: Request):
+    return templates.TemplateResponse(
+        request=request, name="untapped.html"
+    )
+
+@app.post("/add/untapped-decks")
+async def add_untapped_decks_route(request: Request, html_doc: Annotated[str, Form(...)]):
+    # 1 parse html_doc
+    data = await parse_untapped_html(html_doc)
+    
+    # 2 fetch deck lists
+    # 3 add decks to db
+    new_decks = await add_decks_to_db(data)
+    
+    # print(html_str)
+    
+    return templates.TemplateResponse(
+        request=request, name="untapped.html", context={"decks": []}
+    )
+
+async def fetch_decks(data: dict):
+    import httpx
+    import jsonpickle
+
+    # 2. set cookies
+    cookies = data["cookies"]
+    params = {
+        "format": "json"
+    }
+    
+    # 1. build api urls 
+    base_api_url = "https://api.mtga.untapped.gg/api/v1/decks/pricing/cardkingdom/"
+    
+    UntappedDeck = namedtuple("Deck", ["name", "url"])
+    _api_urls = []
+    for deck_url in data["deck_urls"]:
+        _api_urls.append(UntappedDeck(deck_url.split("/")[-2], base_api_url + deck_url.split("/")[-1]))
+    
+    # 3. fetch deck lists
+    # decks = {}
+    # async with httpx.AsyncClient() as client:
+    #     for name, url in _api_urls:
+    #         response = await client.get(url, cookies=cookies, params=params)
+    #         response.raise_for_status()
+    #         decks[name] = {
+    #             "name": name,
+    #             "url": url,
+    #             "cards": response.json()
+    #         }
+    decks = {}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for name, url in _api_urls:
+            try:
+                response = await client.get(url, cookies=cookies, params=params)
+                response.raise_for_status()
+
+                decks[name] = {
+                    "name": name,
+                    "url": url,
+                    "cards": response.json()
+                }
+            except httpx.HTTPStatusError as e:
+                print(f"HTTP error for {name}: {e.response.status_code}")
+                decks[name] = {"name": name, "url": url, "cards": [], "error": str(e)}
+            except httpx.RequestError as e:
+                print(f"Request failed for {name}: {e}")
+                decks[name] = {"name": name, "url": url, "cards": [], "error": str(e)}
+            except ValueError as e:
+                print(f"JSON decode failed for {name}: {e}")
+                decks[name] = {"name": name, "url": url, "cards": [], "error": "Invalid JSON"}
+            
+    return decks
+
+
+async def add_decks_to_db(data: dict):
+    decks = await fetch_decks(data)
+    print(decks)
+    pass
+
+async def parse_untapped_html(html_doc: str):
+    """get cookies and deck urls"""
+    from bs4 import BeautifulSoup
+    import jsonpickle
+    result = {}
+    soup = BeautifulSoup(html_doc, 'html.parser')
+    
+    _next_data_raw = soup.find("script", type="application/json", id="__NEXT_DATA__")
+    _next_data_dict = jsonpickle.decode(_next_data_raw.string)
+    
+    # get cookies for api requests
+    _cookie_header = _next_data_dict["props"]["cookieHeader"].split(";")
+    result["cookies"] = {}
+    for cookie in _cookie_header:
+        if "sessionid" in cookie:
+            result["cookies"]["session_id"] = cookie.split("=")[1]
+        if "csrftoken" in cookie:
+            result["cookies"]["csrf_token"] = cookie.split("=")[1]
+    
+    # get deck urls
+    _deck_tags = soup.find_all("a", class_="sc-bf50840f-1 ptaNk")
+    result["deck_urls"] = list(set([dt.get("href") for dt in _deck_tags]))
+    print(result)
+    
+    return result
 
 ##############################################################################
 # API
 ##############################################################################
+
+
+
+
 
 @app.get("/decks")
 def get_decks(conn: DBConnDep):
