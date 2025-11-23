@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS decks (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     source TEXT NOT NULL,
+    url TEXT NOT NULL,
     added_at TEXT NOT NULL
 );
 
