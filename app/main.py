@@ -277,70 +277,32 @@ def get_decks(cursor):
 ##############################################################################
 
 @app.get("/check-logs", response_class=HTMLResponse)
-async def get_last_log(request: Request, conn: DBConnDep):
+async def analyze_deck_from_logs(request: Request, conn: DBConnDep):
     cursor = conn.cursor()
-    
-    last_line = get_last_log_line()
-    split_line = last_line.split("::")
-    cards_list = split_line[2].split(": ")[1].strip("[]").split(", ")
-    qs = ", ".join("?" * len(cards_list))
-    
-    cursor.execute(f"select distinct name, mtgArenaId from cards where mtgArenaId in ({qs})", cards_list)
-    card_names = [dict(row) for row in cursor.fetchall()]
-    
-    cards_counts = Counter(cards_list)
 
-    # Create a dictionary mapping mtgArenaId to card info including count
-    card_info_by_id = {}
-    for card in card_names:
-        card_info_by_id[card["name"]] = {
-            # "name": card["name"],
-            "count": cards_counts[card["mtgArenaId"]]
-        }
-    
-    # Get all card details including mana cost and type
-    cursor.execute(f"SELECT distinct name, manaCost, type, mtgArenaId FROM cards WHERE mtgArenaId IN ({qs})", cards_list)
-    cards = [dict(row) for row in cursor.fetchall()]
-    
-    # Add count to each card
-    for card in cards:
-        card["count"] = card_info_by_id[card["name"]]["count"]
-    
-    qs_names = ", ".join("?" * len(list(set([card['name'] for card in cards]))))
-    # card_ids_qs = ", ".join("?" * len(card_ids))
-    cursor.execute(f"""
-        SELECT DISTINCT d.id, d.name, d.source, d.url,
-               COUNT(DISTINCT dc.card_id) as matched_cards,
-               (SELECT COUNT(*) FROM deck_cards WHERE deck_id = d.id) as total_deck_cards
-        FROM decks d
-        JOIN deck_cards dc ON d.id = dc.deck_id
-        JOIN cards c ON dc.card_id = c.id
-        WHERE c.name IN ({qs_names}) 
-        GROUP BY d.id
-        ORDER BY matched_cards DESC
-    """, [card['name'] for card in cards])
-    matching_decks = [dict(row) for row in cursor.fetchall()]
-    
-    for deck in matching_decks:
-        cursor.execute("""
-                  SELECT c.name, dc.quantity, c.manaCost, c.type, c.mtgArenaId
-                  FROM deck_cards dc
-                  JOIN cards c ON dc.card_id = c.id
-                  WHERE dc.deck_id = ?
-                  ORDER BY c.manaValue, c.name
-              """, (deck['id'],))
-        deck['cards'] = [dict(row) for row in cursor.fetchall()]
-        for card in deck['cards']:
-            if card['name'] in card_info_by_id:
-                card['current_count'] = card_info_by_id[card['name']]['count']
-            else:
-                card['current_count'] = 0
-                
-            # card['current_count'] = card_info_by_id[card['name']]['count']
-            
+    last_log_entry = get_last_log_line()
+    arena_ids = parse_arena_ids_from_log(last_log_entry)
+
+    if not arena_ids:
+        return templates.TemplateResponse(
+            request=request,
+            name="list_cards.html",
+            context={"cards": [], "matching_decks": []}
+        )
+
+    current_deck_cards = fetch_current_deck_cards(cursor, arena_ids)
+    card_count_by_name = build_card_count_map(arena_ids, current_deck_cards)
+
+    matching_decks = find_matching_decks(cursor, current_deck_cards)
+    enrich_decks_with_cards(cursor, matching_decks, card_count_by_name)
 
     return templates.TemplateResponse(
-        request=request, name="list_cards.html", context={"cards": cards, "matching_decks": matching_decks}
+        request=request,
+        name="list_cards.html",
+        context={
+            "cards": current_deck_cards,
+            "matching_decks": matching_decks
+        }
     )
 
 
@@ -374,6 +336,11 @@ async def add_untapped_decks_route(request: Request, conn: DBConnDep, html_doc: 
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing decks: {str(e)}")
+
+
+##############################################################################
+# Utils ######################################################################
+##############################################################################
 
 
 async def parse_untapped_html(html_doc: str):
@@ -410,3 +377,93 @@ async def parse_untapped_html(html_doc: str):
 
     print(f"Found {len(result['deck_urls'])} deck URLs")
     return result
+
+
+def parse_arena_ids_from_log(log_entry: str) -> list[str]:
+    try:
+        log_segments = log_entry.split("::")
+        if len(log_segments) < 3:
+            return []
+
+        cards_section = log_segments[2].split(": ")
+        if len(cards_section) < 2:
+            return []
+
+        arena_ids_str = cards_section[1].strip("[]")
+        return [id.strip() for id in arena_ids_str.split(", ") if id.strip()]
+    except (IndexError, AttributeError):
+        return []
+
+
+def fetch_current_deck_cards(cursor, arena_ids: list[str]) -> list[dict]:
+    if not arena_ids:
+        return []
+
+    placeholders = ", ".join("?" * len(arena_ids))
+    query = f"""
+        SELECT DISTINCT name, manaCost, type, mtgArenaId 
+        FROM cards 
+        WHERE mtgArenaId IN ({placeholders})
+    """
+    cursor.execute(query, arena_ids)
+
+    cards = [dict(row) for row in cursor.fetchall()]
+
+    id_counts = Counter(arena_ids)
+    for card in cards:
+        card["count"] = id_counts.get(card["mtgArenaId"], 0)
+
+    return cards
+
+
+def build_card_count_map(arena_ids: list[str], cards: list[dict]) -> dict[str, int]:
+    id_counts = Counter(arena_ids)
+    card_count_map = {}
+
+    for card in cards:
+        card_count_map[card["name"]] = id_counts.get(card["mtgArenaId"], 0)
+
+    return card_count_map
+
+
+def find_matching_decks(cursor, current_cards: list[dict]) -> list[dict]:
+    if not current_cards:
+        return []
+
+    unique_card_names = list(set(card['name'] for card in current_cards))
+    placeholders = ", ".join("?" * len(unique_card_names))
+
+    query = f"""
+        SELECT DISTINCT 
+            d.id, 
+            d.name, 
+            d.source, 
+            d.url,
+            COUNT(DISTINCT dc.card_id) as matched_cards,
+            (SELECT COUNT(*) FROM deck_cards WHERE deck_id = d.id) as total_deck_cards
+        FROM decks d
+        JOIN deck_cards dc ON d.id = dc.deck_id
+        JOIN cards c ON dc.card_id = c.id
+        WHERE c.name IN ({placeholders})
+        GROUP BY d.id
+        ORDER BY matched_cards DESC
+    """
+
+    cursor.execute(query, unique_card_names)
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def enrich_decks_with_cards(cursor, decks: list[dict], card_count_map: dict[str, int]):
+    for deck in decks:
+        deck_cards_query = """
+            SELECT c.name, dc.quantity, c.manaCost, c.type, c.mtgArenaId
+            FROM deck_cards dc
+            JOIN cards c ON dc.card_id = c.id
+            WHERE dc.deck_id = ?
+            ORDER BY c.manaValue, c.name
+        """
+        cursor.execute(deck_cards_query, (deck['id'],))
+        deck['cards'] = [dict(row) for row in cursor.fetchall()]
+
+        for card in deck['cards']:
+            card['current_count'] = card_count_map.get(card['name'], 0)
