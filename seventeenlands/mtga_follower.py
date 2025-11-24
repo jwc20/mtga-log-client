@@ -33,8 +33,10 @@ import dateutil.parser
 
 import seventeenlands.api_client
 import seventeenlands.logging_utils
+import httpx
 
 logger = seventeenlands.logging_utils.get_logger("17Lands")
+
 
 class MockApiClient:
     def __init__(self, host: str) -> None:
@@ -43,9 +45,11 @@ class MockApiClient:
 
     def get_client_version_info(self, params: dict[str, Any]) -> Any:
         logger.debug(f"MockApiClient: Would get client version info with params: {params}")
+
         class MockResponse:
             text = '{"min_version": "0.0.0"}'
             status_code = 200
+
         return MockResponse()
 
     def submit_collection(self, blob: dict[str, Any]) -> None:
@@ -269,11 +273,11 @@ def json_value_matches(expectation: Any, path: list[str], blob: dict[str, Any]) 
 
 
 def get_rank_string(
-    rank_class: str,
-    level: int,
-    percentile: Optional[float],
-    place: Optional[int],
-    step: Optional[int],
+        rank_class: str,
+        level: int,
+        percentile: Optional[float],
+        place: Optional[int],
+        step: Optional[int],
 ) -> str:
     """
     Convert the components of rank into a serializable value for recording
@@ -401,8 +405,8 @@ class Follower:
                                 # )
                                 break
                             elif (
-                                last_modified_time
-                                > last_read_time + FILE_UPDATED_FORCE_REFRESH_SECONDS
+                                    last_modified_time
+                                    > last_read_time + FILE_UPDATED_FORCE_REFRESH_SECONDS
                             ):
                                 # # logger.info(
                                 #     f"Starting from beginning of file as file has been updated much more recently than the last read (previous = {last_read_time}; current = {last_modified_time})"
@@ -474,9 +478,9 @@ class Follower:
             if timed_match:
                 self.last_raw_time = timed_match.group(2)
                 self.cur_log_time = extract_time(self.last_raw_time)
-                self.buffer.append(line[timed_match.end() :])
+                self.buffer.append(line[timed_match.end():])
             else:
-                self.buffer.append(line[match.end() :])
+                self.buffer.append(line[match.end():])
         else:
             self.buffer.append(line)
 
@@ -508,7 +512,7 @@ class Follower:
         # self.cur_log_time = None
 
     def __maybe_get_utc_timestamp(
-        self, blob: dict[str, Any]
+            self, blob: dict[str, Any]
     ) -> Optional[datetime.datetime]:
         timestamp = None
         if "timestamp" in blob:
@@ -572,61 +576,61 @@ class Follower:
             pass
 
         if json_value_matches(
-            "Client.Connected", ["params", "messageName"], json_obj
+                "Client.Connected", ["params", "messageName"], json_obj
         ):  # Doesn't exist any more
             self.__handle_login(json_obj)
         elif (
-            contains_log_key(key="Event_Join", full_log=full_log)
-            and "EventName" in json_obj
+                contains_log_key(key="Event_Join", full_log=full_log)
+                and "EventName" in json_obj
         ):
             self.__handle_joined_pod(json_obj)
         elif (
-            contains_log_key(key="Event_Join", full_log=full_log)
-            and "Course" in json_obj
+                contains_log_key(key="Event_Join", full_log=full_log)
+                and "Course" in json_obj
         ):
             self.__handle_joined_event_response(json_obj)
         elif "DraftStatus" in json_obj:
             self.__handle_bot_draft_pack(json_obj)
         elif (
-            contains_log_key(key="BotDraft_DraftPick", full_log=full_log)
-            and "PickInfo" in json_obj
+                contains_log_key(key="BotDraft_DraftPick", full_log=full_log)
+                and "PickInfo" in json_obj
         ):
             self.__handle_bot_draft_pick(json_obj["PickInfo"])
         elif (
-            contains_log_key(key="LogBusinessEvents", full_log=full_log)
-            and "PickGrpId" in json_obj
+                contains_log_key(key="LogBusinessEvents", full_log=full_log)
+                and "PickGrpId" in json_obj
         ):
             self.__handle_human_draft_combined(json_obj)
         elif (
-            contains_log_key(key="LogBusinessEvents", full_log=full_log)
-            and "WinningType" in json_obj
+                contains_log_key(key="LogBusinessEvents", full_log=full_log)
+                and "WinningType" in json_obj
         ):
             self.__handle_log_business_game_end(json_obj)
         elif "Draft.Notify " in full_log and "method" not in json_obj:
             self.__handle_human_draft_pack(json_obj)
         elif (
-            contains_log_key(key="EventPlayerDraftMakePick", full_log=full_log)
-            and "GrpIds" in json_obj
+                contains_log_key(key="EventPlayerDraftMakePick", full_log=full_log)
+                and "GrpIds" in json_obj
         ):
             self.__handle_player_draft_pick(json_obj)
         elif (
-            contains_log_key(key="Event_SetDeck", full_log=full_log)
-            and "EventName" in json_obj
+                contains_log_key(key="Event_SetDeck", full_log=full_log)
+                and "EventName" in json_obj
         ):
             self.__handle_deck_submission(json_obj)
         elif (
-            contains_log_key(key="Event_GetCourses", full_log=full_log)
-            and "Courses" in json_obj
+                contains_log_key(key="Event_GetCourses", full_log=full_log)
+                and "Courses" in json_obj
         ):
             self.__handle_ongoing_events(json_obj)
         elif (
-            contains_log_key(key="Event_ClaimPrize", full_log=full_log)
-            and "EventName" in json_obj
+                contains_log_key(key="Event_ClaimPrize", full_log=full_log)
+                and "EventName" in json_obj
         ):
             self.__handle_claim_prize(json_obj)
         elif (
-            contains_log_key(key="Draft_CompleteDraft", full_log=full_log)
-            and "DraftId" in json_obj
+                contains_log_key(key="Draft_CompleteDraft", full_log=full_log)
+                and "DraftId" in json_obj
         ):
             self.__handle_event_course(json_obj)
         elif "authenticateResponse" in json_obj:
@@ -634,8 +638,8 @@ class Follower:
         elif "matchGameRoomStateChangedEvent" in json_obj:
             self.__handle_match_state_changed(json_obj)
         elif (
-            "greToClientEvent" in json_obj
-            and "greToClientMessages" in json_obj["greToClientEvent"]
+                "greToClientEvent" in json_obj
+                and "greToClientMessages" in json_obj["greToClientEvent"]
         ):
             try:
                 for message in json_obj["greToClientEvent"]["greToClientMessages"]:
@@ -647,27 +651,27 @@ class Follower:
                     stacktrace=traceback.format_exc(),
                 )
         elif json_value_matches(
-            "ClientToMatchServiceMessageType_ClientToGREMessage",
-            ["clientToMatchServiceMessageType"],
-            json_obj,
+                "ClientToMatchServiceMessageType_ClientToGREMessage",
+                ["clientToMatchServiceMessageType"],
+                json_obj,
         ):
             self.__handle_client_to_gre_message(json_obj.get("payload", {}), maybe_time)
         elif json_value_matches(
-            "ClientToMatchServiceMessageType_ClientToGREUIMessage",
-            ["clientToMatchServiceMessageType"],
-            json_obj,
+                "ClientToMatchServiceMessageType_ClientToGREUIMessage",
+                ["clientToMatchServiceMessageType"],
+                json_obj,
         ):
             self.__handle_client_to_gre_ui_message(
                 json_obj.get("payload", {}), maybe_time
             )
         elif (
-            contains_log_key(key="Rank_GetCombinedRankInfo", full_log=full_log)
-            and "limitedSeasonOrdinal" in json_obj
+                contains_log_key(key="Rank_GetCombinedRankInfo", full_log=full_log)
+                and "limitedSeasonOrdinal" in json_obj
         ):
             self.__handle_self_rank_info(json_obj)
         elif (
-            " PlayerInventory.GetPlayerCardsV3 " in full_log
-            and "method" not in json_obj
+                " PlayerInventory.GetPlayerCardsV3 " in full_log
+                and "method" not in json_obj
         ):  # Doesn't exist any more
             self.__handle_collection(json_obj)
         elif "DTO_InventoryInfo" in json_obj:
@@ -778,7 +782,7 @@ class Follower:
             self.__clear_match_data(submit_pending_game=True)
 
     def _add_to_game_history(
-        self, message_blob: dict[str, Any], timestamp: Optional[datetime.datetime]
+            self, message_blob: dict[str, Any], timestamp: Optional[datetime.datetime]
     ) -> None:
         self.game_history_events.append(
             {
@@ -788,7 +792,7 @@ class Follower:
         )
 
     def __handle_gre_to_client_message(
-        self, message_blob: dict[str, Any], timestamp: Optional[datetime.datetime]
+            self, message_blob: dict[str, Any], timestamp: Optional[datetime.datetime]
     ) -> None:
         """Handle messages in the 'greToClientEvent' field."""
         # Add to game history before processing the message, since we may submit the game right away.
@@ -798,8 +802,8 @@ class Follower:
         ]:
             self._add_to_game_history(message_blob, timestamp)
         elif (
-            message_blob["type"] == "GREMessageType_UIMessage"
-            and "onChat" in message_blob["uiMessage"]
+                message_blob["type"] == "GREMessageType_UIMessage"
+                and "onChat" in message_blob["uiMessage"]
         ):
             self._add_to_game_history(message_blob, timestamp)
 
@@ -820,8 +824,8 @@ class Follower:
                 if "gameInfo" in game_state_message:
                     game_info = game_state_message["gameInfo"]
                     if (
-                        game_info.get("matchID", self.current_match_id)
-                        != self.current_match_id
+                            game_info.get("matchID", self.current_match_id)
+                            != self.current_match_id
                     ):
                         self.current_match_id = game_info["matchID"]
                         self.current_event_id = None
@@ -837,20 +841,23 @@ class Follower:
 
                 for game_object in game_state_message.get("gameObjects", []):
                     if game_object["type"] not in (
-                        "GameObjectType_Card",
-                        "GameObjectType_SplitCard",
+                            "GameObjectType_Card",
+                            "GameObjectType_SplitCard",
                     ):
                         continue
                     owner = game_object["ownerSeatId"]
                     instance_id = game_object["instanceId"]
                     card_id = game_object["overlayGrpId"]
 
-                    previous_cards = list(self.objects_by_owner[owner].values()) if instance_id in self.objects_by_owner[owner] else None
+                    previous_cards = list(self.objects_by_owner[owner].values()) if instance_id in \
+                                                                                    self.objects_by_owner[
+                                                                                        owner] else None
                     self.objects_by_owner[owner][instance_id] = card_id
                     current_cards = list(self.objects_by_owner[owner].values())
-                    
+
                     if previous_cards is None or previous_cards != current_cards:
-                        logger.info(f"Player {owner} cards: {current_cards}")
+                        if self.seat_id and owner != self.seat_id:
+                            logger.info(f"::Opponent (Player {owner})::cards: {current_cards}")
 
                 for zone in game_state_message.get("zones", []):
                     if zone["type"] == "ZoneType_Hand":
@@ -885,13 +892,13 @@ class Follower:
                         )
 
                 if len(self.opening_hand) == 0 and (
-                    "Phase_Beginning",
-                    "Step_Upkeep",
-                    1,
+                        "Phase_Beginning",
+                        "Step_Upkeep",
+                        1,
                 ) == (
-                    turn_info.get("phase"),
-                    turn_info.get("step"),
-                    turn_info.get("turnNumber"),
+                        turn_info.get("phase"),
+                        turn_info.get("step"),
+                        turn_info.get("turnNumber"),
                 ):
                     for owner, hand in self.cards_in_hand.items():
                         self.opening_hand[owner] = hand.copy()
@@ -920,7 +927,7 @@ class Follower:
             )
 
     def __handle_client_to_gre_message(
-        self, payload: dict[str, Any], timestamp: Optional[datetime.datetime]
+            self, payload: dict[str, Any], timestamp: Optional[datetime.datetime]
     ) -> None:
         try:
             if payload["type"] == "ClientMessageType_SelectNResp":
@@ -949,7 +956,7 @@ class Follower:
             )
 
     def __handle_client_to_gre_ui_message(
-        self, payload: dict[str, Any], timestamp: Optional[datetime.datetime]
+            self, payload: dict[str, Any], timestamp: Optional[datetime.datetime]
     ) -> None:
         try:
             if "onChat" in payload["uiMessage"]:
@@ -963,7 +970,7 @@ class Follower:
             )
 
     def __handle_gre_edictal_message(
-        self, payload: dict[str, Any], timestamp: Optional[datetime.datetime]
+            self, payload: dict[str, Any], timestamp: Optional[datetime.datetime]
     ) -> None:
         try:
             edict_message = payload.get("edictalMessage", {}).get("edictMessage", {})
@@ -1003,7 +1010,7 @@ class Follower:
             )
 
     def __maybe_handle_game_over_stage(
-        self, game_state_message: dict[str, Any]
+            self, game_state_message: dict[str, Any]
     ) -> None:
         game_info = game_state_message.get("gameInfo", {})
         if game_info.get("stage") != "GameStage_GameOver":
@@ -1127,14 +1134,14 @@ class Follower:
 
     def __has_pending_game_data(self) -> bool:
         return (
-            len(self.drawn_cards_by_instance_id) > 0
-            and len(self.game_history_events) > 5
+                len(self.drawn_cards_by_instance_id) > 0
+                and len(self.game_history_events) > 5
         )
 
     def __enqueue_game_results(
-        self,
-        results: list[dict[str, Any]],
-        match_game_room_state_changed_obj: Optional[dict[str, Any]] = None,
+            self,
+            results: list[dict[str, Any]],
+            match_game_room_state_changed_obj: Optional[dict[str, Any]] = None,
     ) -> None:
         try:
             game_results = [r for r in results if r.get("scope") == "MatchScope_Game"]
@@ -1195,7 +1202,7 @@ class Follower:
                 ),
                 "mulligan_count": self.opening_hand_count_by_seat[self.seat_id] - 1,
                 "opponent_mulligan_count": self.opening_hand_count_by_seat[opponent_id]
-                - 1,
+                                           - 1,
                 "turns": self.turn_count,
                 "duration": -1,
                 "opponent_card_ids": opponent_card_ids,
@@ -1207,9 +1214,8 @@ class Follower:
                 "service_metadata": self.game_service_metadata,
                 "client_metadata": self.game_client_metadata,
             }
-            logger.info(f"Completed game: {game["event_name"]} - {game["match_id"]}")
+            # logger.info(f"Completed game: {game["event_name"]} - {game["match_id"]}")
 
-            # Add the history to the blob after logging to avoid printing excessive logs
             # logger.info(f"Adding game history ({len(self.game_history_events)} events)")
             game["history"] = {
                 "seat_id": self.seat_id,
@@ -1499,20 +1505,20 @@ class Follower:
                 k: v
                 for k, v in json_obj.items()
                 if k
-                in {
-                    "Gems",
-                    "Gold",
-                    "TotalVaultProgress",
-                    "wcTrackPosition",
-                    "WildCardCommons",
-                    "WildCardUnCommons",
-                    "WildCardRares",
-                    "WildCardMythics",
-                    "DraftTokens",
-                    "SealedTokens",
-                    "Boosters",
-                    "Changes",
-                }
+                   in {
+                       "Gems",
+                       "Gold",
+                       "TotalVaultProgress",
+                       "wcTrackPosition",
+                       "WildCardCommons",
+                       "WildCardUnCommons",
+                       "WildCardRares",
+                       "WildCardMythics",
+                       "DraftTokens",
+                       "SealedTokens",
+                       "Boosters",
+                       "Changes",
+                   }
             }
             blob = {
                 "inventory": json_obj,
@@ -1704,12 +1710,12 @@ def show_update_message(response_data: dict[str, Any]) -> None:
         message = response_data["upgrade_instructions"]
     else:
         message = (
-            "17Lands update required! The minimum supported version for the client is "
-            + f"{response_data.get('min_version', 'newer than your current version')}. "
-            + f"Your current version is {CLIENT_VERSION}. Please update with one of the following "
-            + "commands in the terminal, depending on your installation method:\n"
-            + "brew update && brew upgrade seventeenlands\n"
-            + "pip3 install --user --upgrade seventeenlands"
+                "17Lands update required! The minimum supported version for the client is "
+                + f"{response_data.get('min_version', 'newer than your current version')}. "
+                + f"Your current version is {CLIENT_VERSION}. Please update with one of the following "
+                + "commands in the terminal, depending on your installation method:\n"
+                + "brew update && brew upgrade seventeenlands\n"
+                + "pip3 install --user --upgrade seventeenlands"
         )
 
     show_message(title, message)
@@ -1752,9 +1758,9 @@ def processing_loop(args: argparse.Namespace, token: str) -> None:
 
     # if running in "normal" mode...
     if (
-        args.log_file is None
-        and args.host == seventeenlands.api_client.DEFAULT_HOST
-        and follow
+            args.log_file is None
+            and args.host == seventeenlands.api_client.DEFAULT_HOST
+            and follow
     ):
         # parse previous log once at startup to catch up on any missed events
         for filename in POSSIBLE_PREVIOUS_FILEPATHS:
@@ -1809,8 +1815,8 @@ def main() -> None:
 
     check_count = 0
     while not verify_version(
-        host=args.host,
-        prompt_if_update_required=check_count % UPDATE_PROMPT_FREQUENCY == 0,
+            host=args.host,
+            prompt_if_update_required=check_count % UPDATE_PROMPT_FREQUENCY == 0,
     ):
         check_count += 1
         time.sleep(UPDATE_CHECK_INTERVAL.total_seconds())
