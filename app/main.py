@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from datetime import datetime
 import os
+from sse_starlette import EventSourceResponse
 
 log_line_count = 0
 last_processed_log_line_count = 0
@@ -37,17 +38,15 @@ def get_last_log_line():
         with open(log_file_path, 'rb') as file:
             log_line_count = sum(1 for _ in file)
 
-            # Seek to end of file
             file.seek(0, os.SEEK_END)
             file_size = file.tell()
 
             if file_size == 0:
                 return None
 
-            # Read backwards to find last newline
             file.seek(-2, os.SEEK_END)
             while file.read(1) != b'\n':
-                if file.tell() == 1:  # At beginning of file
+                if file.tell() == 1:
                     file.seek(0)
                     break
                 file.seek(-2, os.SEEK_CUR)
@@ -131,24 +130,36 @@ async def add_logging_middleware(request: Request, call_next):
 # API
 ##############################################################################
 
-async def fetch_decks(data: dict):
-    import httpx
-    cookies = data.get("cookies", {})
-    if not cookies:
-        raise ValueError("No cookies provided for API requests")
 
-    params = {
-        "format": "json"
-    }
 
+async def build_untapped_decks_api_urls(deck_urls: list):
     base_api_url = "https://api.mtga.untapped.gg/api/v1/decks/pricing/cardkingdom/"
     UntappedDeck = namedtuple("Deck", ["name", "url", "api_url"])
     untapped_decks = []
-    for deck_url in data["deck_urls"]:
+    for deck_url in deck_urls:
         deck_parts = deck_url.split("/")
         if len(deck_parts) >= 2:
             untapped_decks.append(UntappedDeck(deck_parts[-2], deck_url, base_api_url + deck_parts[-1]))
 
+    return untapped_decks
+
+
+async def fetch_untapped_decks_from_api(conn: DBConnDep, cookies: dict | None, untapped_decks: list):
+    import httpx
+    
+    if not cookies:
+        cursor = conn.cursor()
+        cursor.execute("SELECT sessionid, csrfToken FROM user_info ORDER BY added_at DESC LIMIT 1")
+        cookies_row = cursor.fetchone()
+        cookies = {
+            "sessionid": cookies_row[0],
+            "csrfToken": cookies_row[1]
+        }
+    
+    params = {
+        "format": "json"
+    }
+    
     decks = []
     async with httpx.AsyncClient(timeout=30.0) as client:
         for name, url, api_url in untapped_decks:
@@ -164,6 +175,7 @@ async def fetch_decks(data: dict):
                 decks.append(deck)
                 print(f"Fetched deck: {name}")
                 await asyncio.sleep(2)
+                
             except httpx.HTTPStatusError as e:
                 print(f"HTTP error for {name}: {e.response.status_code}")
                 decks[name] = {"name": name, "url": url, "cards": [], "error": str(e)}
@@ -177,9 +189,38 @@ async def fetch_decks(data: dict):
     return decks
 
 
+
+
+async def fetch_untapped_decks_from_html(conn, data: dict):
+    cookies = data.get("cookies", {})
+    if not cookies:
+        raise ValueError("No cookies provided for API requests")
+    
+    untapped_decks = await build_untapped_decks_api_urls(data["deck_urls"])
+    
+    cookies = {
+        "session_id": data["cookies"]["session_id"], 
+        "csrf_token": data["cookies"]["csrf_token"],
+    }
+    
+    # decks = await fetch_untapped_decks_from_api(untapped_decks)
+    try:
+        decks = await fetch_untapped_decks_from_api(conn, cookies, untapped_decks)
+    except Exception as e:
+        decks = []
+
+    return decks
+
+
 async def add_decks_to_db(conn: sqlite3.Connection, data: dict):
-    decks = await fetch_decks(data)
     cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO user_info (sessionid, csrfToken, added_at) VALUES (?, ?, ?)",
+        (data["cookies"]["session_id"], data["cookies"]["csrf_token"], datetime.now())
+    )
+    conn.commit()
+    
+    decks = await fetch_untapped_decks_from_html(conn, data)
 
     for deck in decks:
         if deck.get("error"):
@@ -254,7 +295,6 @@ def get_decks(cursor):
     rows = cursor.fetchall()
 
     cards = [dict(row) for row in rows]
-    # print(decks)
     decks = {}
     for card in cards:
         deck_id = card["deck_id"]
@@ -282,41 +322,53 @@ def get_decks(cursor):
 # Routes
 ##############################################################################
 
-@app.get("/check-logs", response_class=HTMLResponse)
-async def analyze_deck_from_logs(request: Request, conn: DBConnDep):
-    global log_line_count, last_processed_log_line_count
-    cursor = conn.cursor()
-    last_log_entry = get_last_log_line()
 
-    # ------------------------------------------
-    # check whether any new lines were added
-    if log_line_count == last_processed_log_line_count: pass
-    last_processed_log_line_count = log_line_count
-    # ------------------------------------------
 
-    arena_ids = parse_arena_ids_from_log(last_log_entry)
 
-    if not arena_ids:
-        return templates.TemplateResponse(
-            request=request,
-            name="list_cards.html",
-            context={"cards": [], "matching_decks": []}
-        )
+@app.get("/check-logs")
+async def check_logs_stream(request: Request):
+    conn = get_db()
 
-    current_deck_cards = fetch_current_deck_cards(cursor, arena_ids)
-    card_count_by_name = build_card_count_map(arena_ids, current_deck_cards)
+    async def event_generator():
+        global log_line_count, last_processed_log_line_count
+        cursor = conn.cursor()
 
-    matching_decks = find_matching_decks(cursor, current_deck_cards)
-    enrich_decks_with_cards(cursor, matching_decks, card_count_by_name)
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
 
-    return templates.TemplateResponse(
-        request=request,
-        name="list_cards.html",
-        context={
-            "cards": current_deck_cards,
-            "matching_decks": matching_decks
-        }
-    )
+                last_log_entry = get_last_log_line()
+
+                if log_line_count != last_processed_log_line_count:
+                    last_processed_log_line_count = log_line_count
+
+                    arena_ids = parse_arena_ids_from_log(last_log_entry)
+
+                    if arena_ids:
+                        current_deck_cards = fetch_current_deck_cards(cursor, arena_ids)
+                        card_count_by_name = build_card_count_map(arena_ids, current_deck_cards)
+                        matching_decks = find_matching_decks(cursor, current_deck_cards)
+                        enrich_decks_with_cards(cursor, matching_decks, card_count_by_name)
+                    else:
+                        current_deck_cards = []
+                        matching_decks = []
+
+                    html_content = templates.get_template("list_cards.html").render(
+                        cards=current_deck_cards,
+                        matching_decks=matching_decks
+                    )
+
+                    yield {
+                        "event": "log-update",
+                        "data": html_content.replace("\n", " ")
+                    }
+
+                await asyncio.sleep(1)
+        finally:
+            conn.close()
+
+    return EventSourceResponse(event_generator())
 
 
 @app.get("/follow", response_class=HTMLResponse)
@@ -337,8 +389,86 @@ async def list_untapped(request: Request, conn: DBConnDep):
     )
 
 
-@app.post("/add/untapped-decks")
-async def add_untapped_decks_route(request: Request, conn: DBConnDep, html_doc: Annotated[str, Form(...)]):
+@app.post("/add/untapped-decks-urls")
+async def add_untapped_decks_url_list_route(request: Request, conn: DBConnDep, url_list: Annotated[str, Form(...)]):
+    try:
+        print(url_list)
+        urls = url_list.split("\n")
+        data = await build_untapped_decks_api_urls(urls)
+
+        try:
+            decks = await fetch_untapped_decks_from_api(conn=conn, cookies=None, untapped_decks=data)
+        except Exception as e:
+            decks = []
+
+        cursor = conn.cursor()
+
+        for deck in decks:
+            if deck.get("error"):
+                print(f"Skipping deck {deck['name']} due to error: {deck['error']}")
+                continue
+
+            cursor.execute(
+                "INSERT INTO decks (name, source, url, added_at) VALUES (?, ?, ?, ?)",
+                (deck["name"], "untapped", deck["url"], datetime.now())
+            )
+            deck_id = cursor.lastrowid
+
+            for card in deck.get("cards", []):
+                unique_id = card.get("scryfallId") or card.get("mtgArenaId")
+
+                if unique_id:
+                    cursor.execute(
+                        "SELECT id FROM cards WHERE scryfallId = ? OR mtgArenaId = ?",
+                        (card.get("scryfallId"), card.get("mtgArenaId"))
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT id FROM cards WHERE name = ?",
+                        (card["name"],)
+                    )
+
+                result = cursor.fetchone()
+
+                if result:
+                    card_id = result[0]
+                else:
+                    cursor.execute(
+                        """INSERT INTO cards 
+                        (name, manaCost, manaValue, power, originalText, type, types, 
+                         mtgArenaId, scryfallId, availability, colors, keywords) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (card.get("name"), card.get("manaCost"), card.get("manaValue"),
+                         card.get("power"), card.get("originalText"), card.get("type"),
+                         str(card.get("types", [])) if card.get("types") else None,
+                         card.get("mtgArenaId"), card.get("scryfallId"),
+                         str(card.get("availability", [])) if card.get("availability") else None,
+                         str(card.get("colors", [])) if card.get("colors") else None,
+                         str(card.get("keywords", [])) if card.get("keywords") else None)
+                    )
+                    card_id = cursor.lastrowid
+
+                cursor.execute(
+                    "INSERT OR IGNORE INTO deck_cards (deck_id, card_id, quantity) VALUES (?, ?, ?)",
+                    (deck_id, card_id, card.get("qty", 1))
+                )
+
+        conn.commit()
+        
+        added_decks = get_decks(cursor)
+        # await add_decks_to_db(conn, decks)
+        
+        return templates.TemplateResponse(
+            request=request, name="untapped.html", context={"decks": added_decks}
+        )
+        
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing decks: {str(e)}")
+
+
+@app.post("/add/untapped-decks-html")
+async def add_untapped_decks_html_route(request: Request, conn: DBConnDep, html_doc: Annotated[str, Form(...)]):
     try:
         data = await parse_untapped_html(html_doc)
         await add_decks_to_db(conn, data)

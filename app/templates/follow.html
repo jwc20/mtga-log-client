@@ -4,22 +4,12 @@
 {% block content %}
 
 <section>
-<!--    opponent's cards played -->
     <div
-        class="current-cards"
-        hx-get="/check-logs"
-        hx-target=".follow"
-        hx-swap="innerHTML"
-        hx-trigger="every 1s"
-    >   
+        class="follow"
+        hx-ext="sse" 
+        sse-connect="/check-logs"
+        sse-swap="log-update"
+    >
     </div>
 </section>
-
-<section>
-    <div class="follow">
-    </div>
-</section>
-
-
-
 {% endblock %}

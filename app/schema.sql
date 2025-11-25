@@ -2,6 +2,12 @@
 -- drop Table IF EXISTS cards;
 -- drop Table IF EXISTS deck_cards;
 
+Create Table if not exists user_info (
+    id INTEGER PRIMARY KEY,
+    sessionid TEXT NOT NULL,
+    csrfToken TEXT NOT NULL,
+    added_at TEXT NOT NULL
+);
 
 -- Table for Decks
 CREATE TABLE IF NOT EXISTS decks (
