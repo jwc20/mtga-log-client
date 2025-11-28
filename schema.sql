@@ -1,6 +1,6 @@
-drop Table IF EXISTS decks;
-drop Table IF EXISTS cards;
-drop Table IF EXISTS deck_cards;
+-- drop Table IF EXISTS decks;
+-- drop Table IF EXISTS cards;
+-- drop Table IF EXISTS deck_cards;
 
 Create Table if not exists user_info (
     id INTEGER PRIMARY KEY,
@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS cards (
     name TEXT NOT NULL,
     printedName TEXT,
     flavorName TEXT,
+    faceName TEXT
     manaCost TEXT,
     manaValue REAL,
     power TEXT,
