@@ -2,7 +2,7 @@ import sqlite3
 import asyncio
 from collections import namedtuple, Counter
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Tuple, List, Set
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends, FastAPI, Request, Response, Form, HTTPException
@@ -177,9 +177,9 @@ async def check_logs_stream(request: Request):
                         for deck in matching_decks:
                             type_counts = {}
                             for card in deck.get('cards', []):
-                                if 'type_line' in card:
-                                    if card["type_line"]:
-                                        card_types = card['type_line'].strip().lower()
+                                if 'types' in card:
+                                    if card["types"]:
+                                        card_types = card['types'].strip().lower()
                                         type_counts[card_types] = type_counts.get(card_types, 0) + 1
                             deck['type_counts'] = type_counts
                     else:
@@ -380,21 +380,22 @@ def find_matching_decks(cursor, current_cards: list[dict]) -> list[dict]:
             COUNT(DISTINCT dc.card_id) as matched_cards,
             (SELECT COUNT(*) FROM deck_cards WHERE deck_id = d.id) as total_deck_cards
         FROM decks d
-        JOIN deck_cards dc ON d.id = dc.deck_id
-        JOIN scryfall_all_cards c ON dc.card_id = c.id
+        INNER JOIN deck_cards dc ON d.id = dc.deck_id
+        INNER JOIN scryfall_all_cards c ON dc.card_id = c.id
         WHERE c.name IN ({placeholders})
         GROUP BY d.id
         ORDER BY matched_cards DESC
     """
-
     cursor.execute(query, unique_card_names)
-    return [dict(row) for row in cursor.fetchall()]
+    cards = [dict(row) for row in cursor.fetchall()]
+    # cards = [card for card in cards if card["component"] != "combo_piece"]
+    return cards
 
 
 def enrich_decks_with_cards(cursor, decks: list[dict], card_count_map: dict[str, int]):
     for deck in decks:
         deck_cards_query = """
-            SELECT c.name, dc.quantity, c.mana_cost, c.type_line, c.arena_id, c.id
+            SELECT c.name, dc.quantity, c.mana_cost, c.type_line, c.arena_id, c.id, c.component
             FROM deck_cards dc
             JOIN scryfall_all_cards c ON dc.card_id = c.id
             WHERE dc.deck_id = ?
@@ -402,10 +403,62 @@ def enrich_decks_with_cards(cursor, decks: list[dict], card_count_map: dict[str,
         """
         cursor.execute(deck_cards_query, (deck['id'],))
         deck['cards'] = [dict(row) for row in cursor.fetchall()]
+        deck['cards'] = [card for card in deck['cards'] if card['component'] != "combo_piece"]
+        
+        # use parse_card_types to get the super, type, and sub types
+        for card in deck['cards']:
+            card['super_types'], card['types'], card['sub_types'] = parse_card_types(card['type_line'])
 
         for card in deck['cards']:
             card['current_count'] = card_count_map.get(card['name'], 0)
 
+
+def parse_card_types(card_type: str) -> Tuple[List[str], str, List[str]]:
+    """
+    Given a card type string, split it up into its raw components: super, sub, and type
+    :param card_type: Card type string to parse
+    :return: Tuple (super, type, sub) of the card's attributes
+    """
+    sub_types: List[str] = []
+    super_types: List[str] = []
+    types: List[str] = []
+    MULTI_WORD_SUB_TYPES: Set[str] = {"Time Lord"}
+    SUPER_TYPES: Set[str] = {"Basic", "Host", "Legendary", "Ongoing", "Snow", "World"}
+    # BASIC_LAND_NAMES: Set[str] = {"Plains", "Island", "Swamp", "Mountain", "Forest"}
+    supertypes_and_types: str
+    if "—" not in card_type:
+        supertypes_and_types = card_type
+    else:
+        split_type: List[str] = card_type.split("—")
+        supertypes_and_types = split_type[0]
+        subtypes: str = split_type[1]
+
+        # Planes are an entire sub-type, whereas normal cards
+        # are split by spaces... until they aren't #WHO
+        if card_type.startswith("Plane"):
+            sub_types = [subtypes.strip()]
+        else:
+            special_case_found = False
+            for special_case in MULTI_WORD_SUB_TYPES:
+                if special_case in subtypes:
+                    subtypes = subtypes.replace(
+                        special_case, special_case.replace(" ", "!")
+                    )
+                    special_case_found = True
+
+            sub_types = [x.strip() for x in subtypes.split() if x]
+            if special_case_found:
+                for i, sub_type in enumerate(sub_types):
+                    sub_types[i] = sub_type.replace("!", " ")
+
+    for value in supertypes_and_types.split():
+        if value in SUPER_TYPES:
+            super_types.append(value)
+        elif value:
+            types.append(value)
+
+    # return types as string 
+    return super_types, " ".join(types), sub_types
 
 async def build_untapped_decks_api_urls(deck_urls: list):
     base_api_url = "https://api.mtga.untapped.gg/api/v1/decks/pricing/cardkingdom/"
@@ -492,56 +545,76 @@ async def add_decks_to_db(conn: sqlite3.Connection, decks: list):
             print(f"Skipping deck {deck['name']} due to error: {deck['error']}")
             continue
 
-        cursor.execute(
-            "INSERT INTO decks (name, source, url, added_at) VALUES (?, ?, ?, ?)",
-            (deck["name"], "untapped", deck["url"], datetime.now())
-        )
+        # TODO
+        # base_64_decklist
+
+        try:
+            cursor.execute(
+                "INSERT INTO decks (name, source, url, added_at) VALUES (?, ?, ?, ?)",
+                (deck["name"], "untapped", deck["url"], datetime.now())
+            )
+        except sqlite3.IntegrityError:
+            print(f"Deck {deck['name']} already exists in database")
+            continue
+        except Exception as e:
+            print(f"Error adding deck {deck['name']} to database: {e}")
+            continue
+
         deck_id = cursor.lastrowid
 
         for card in deck.get("cards", []):
-            scryfall_id = card.get("scryfallId") or card.get("id")
-            arena_id = card.get("mtgArenaId") or card.get("arena_id")
-
-            if scryfall_id or arena_id:
-                cursor.execute(
-                    "SELECT id FROM scryfall_all_cards WHERE id = ? OR arena_id = ?",
-                    (scryfall_id, arena_id)
-                )
-            else:
-                cursor.execute(
-                    "SELECT id FROM scryfall_all_cards WHERE name = ?",
-                    (card["name"],)
-                )
-
+            # scryfall_id = card.get("scryfallId") or card.get("id")
+            # arena_id = card.get("mtgArenaId") or card.get("arena_id")
+            # 
+            # if scryfall_id or arena_id:
+            #     cursor.execute(
+            #         "SELECT id FROM scryfall_all_cards WHERE id = ? OR arena_id = ?",
+            #         (scryfall_id, arena_id)
+            #     )
+            # else:
+            #     cursor.execute(
+            #         "SELECT id FROM scryfall_all_cards WHERE name = ?",
+            #         (card["name"],)
+            #     )
+            cursor.execute(
+                "SELECT id FROM scryfall_all_cards WHERE name = ?",
+                (card["name"],)
+            )
             result = cursor.fetchone()
 
-            if result:
-                card_id = result[0]
-            else:
-                cursor.execute(
-                    """INSERT INTO scryfall_all_cards 
-                    (object, id, name, arena_id, layout, color_identity, colors, 
-                     mana_cost, type_line, oracle_text, rarity, games, keywords, power, toughness) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        "card",
-                        scryfall_id,
-                        card.get("name"),
-                        arena_id,
-                        card.get("layout"),
-                        card.get("color_identity") or card.get("colorIdentity"),
-                        card.get("colors"),
-                        card.get("manaCost") or card.get("mana_cost"),
-                        card.get("type") or card.get("type_line"),
-                        card.get("originalText") or card.get("oracle_text"),
-                        card.get("rarity"),
-                        card.get("availability") or card.get("games"),
-                        card.get("keywords"),
-                        card.get("power"),
-                        card.get("toughness"),
-                    )
-                )
-                card_id = cursor.lastrowid
+            if not result:
+                print(f"Card {card['name']} not found in database")
+                # use like query to search in printed_name, flavor_name
+                cursor.execute("SELECT id FROM scryfall_all_cards WHERE printed_name LIKE ? OR flavor_name LIKE ?",
+                               (card["name"], card["name"]))
+                result = cursor.fetchone()
+
+            card_id = result[0]
+            # else:
+            #     cursor.execute(
+            #         """INSERT INTO scryfall_all_cards 
+            #         (object, id, name, arena_id, layout, color_identity, colors, 
+            #          mana_cost, type_line, oracle_text, rarity, games, keywords, power, toughness) 
+            #         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            #         (
+            #             "card",
+            #             scryfall_id,
+            #             card.get("name"),
+            #             arena_id,
+            #             card.get("layout"),
+            #             card.get("color_identity") or card.get("colorIdentity"),
+            #             card.get("colors"),
+            #             card.get("manaCost") or card.get("mana_cost"),
+            #             card.get("type") or card.get("type_line"),
+            #             card.get("originalText") or card.get("oracle_text"),
+            #             card.get("rarity"),
+            #             card.get("availability") or card.get("games"),
+            #             card.get("keywords"),
+            #             card.get("power"),
+            #             card.get("toughness"),
+            #         )
+            #     )
+            #     card_id = cursor.lastrowid
 
             cursor.execute(
                 "INSERT OR IGNORE INTO deck_cards (deck_id, card_id, quantity) VALUES (?, ?, ?)",
@@ -572,11 +645,12 @@ def get_decks(cursor):
            c.name      as name,
            dc.quantity as quantity,
            c.mana_cost as mana_cost,
-           c.type_line as type_line
+           c.type_line as type_line,
+           c.component as component
     FROM decks d
              INNER JOIN deck_cards dc
                         ON d.id = dc.deck_id
-             LEFT JOIN scryfall_all_cards c
+             Inner JOIN scryfall_all_cards c
                        ON dc.card_id = c.id
     ORDER BY added_at DESC;
     """)
@@ -584,6 +658,10 @@ def get_decks(cursor):
 
     cards = [dict(row) for row in rows]
     decks = {}
+
+    # remove cards with the same names and has component = combo_piece
+    cards = [card for card in cards if card["component"] != "combo_piece"]
+
     for card in cards:
         deck_id = card["deck_id"]
 
@@ -603,4 +681,5 @@ def get_decks(cursor):
             "type_line": card["type_line"]
         }
         decks[deck_id]["cards"].append(card_info)
+
     return list(decks.values())

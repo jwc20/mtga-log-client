@@ -1,9 +1,9 @@
 -- drop Table IF EXISTS decks;
 -- drop Table IF EXISTS cards;
 -- drop Table IF EXISTS deck_cards;
-DROP TABLE IF EXISTS decks;
-DROP TABLE IF EXISTS cards;
-DROP TABLE IF EXISTS deck_cards;
+-- DROP TABLE IF EXISTS decks;
+-- DROP TABLE IF EXISTS cards;
+-- DROP TABLE IF EXISTS deck_cards;
 
 CREATE TABLE IF NOT EXISTS user_info
 (
@@ -21,32 +21,81 @@ CREATE TABLE IF NOT EXISTS decks
     url      TEXT NOT NULL,
     added_at TEXT NOT NULL
 );
+-- 
+-- CREATE TABLE IF NOT EXISTS cards
+-- (
+--     id            INTEGER PRIMARY KEY,
+--     name          TEXT NOT NULL,
+--     printed_name  TEXT,
+--     flavor_name   TEXT,
+--     face_name     TEXT,
+--     mana_cost     TEXT,
+--     mana_value    REAL,
+--     power         TEXT,
+--     original_text TEXT,
+--     type          TEXT,
+--     types         TEXT,
+--     mtg_arena_id  TEXT,
+--     scryfall_id   TEXT,
+--     availability  TEXT,
+--     colors        TEXT,
+--     keywords      TEXT
+-- );
 
-CREATE TABLE IF NOT EXISTS cards
+CREATE TABLE IF NOT EXISTS scryfall_all_cards
 (
-    id            INTEGER PRIMARY KEY,
-    name          TEXT NOT NULL,
-    printed_name  TEXT,
-    flavor_name   TEXT,
-    face_name     TEXT,
-    mana_cost     TEXT,
-    mana_value    REAL,
-    power         TEXT,
-    original_text TEXT,
-    type          TEXT,
-    types         TEXT,
-    mtg_arena_id  TEXT,
-    scryfall_id   TEXT,
-    availability  TEXT,
-    colors        TEXT,
-    keywords      TEXT
+    object              TEXT,
+    id                  TEXT,
+    name                TEXT,
+    parent_id           TEXT,
+    component           TEXT,
+    arena_id            TEXT,
+    mtgo_id             TEXT,
+    mtgo_foil_id        TEXT,
+    multiverse_ids      TEXT,
+    resource_id         TEXT,
+    oracle_id           TEXT,
+    illustration_id     TEXT,
+    layout              TEXT,
+    color_identity      TEXT,
+    colors              TEXT,
+    mana_cost           TEXT,
+    type_line           TEXT,
+    oracle_text         TEXT,
+    booster             TEXT,
+    rarity              TEXT,
+    variation           TEXT,
+    games               TEXT,
+    promo_types         TEXT,
+    keywords            TEXT,
+    uri                 TEXT,
+    power               TEXT,
+    toughness           TEXT,
+    flavor_text         TEXT,
+    artist              TEXT,
+    artist_id           TEXT,
+    image_uri_large     TEXT,
+    printed_name        TEXT,
+    printed_type_line   TEXT,
+    printed_text        TEXT,
+    color_indicator     TEXT,
+    watermark           TEXT,
+    defense             TEXT,
+    loyalty             TEXT,
+    flavor_name         TEXT,
+    card_type           TEXT,
+    printed_flavor_text TEXT,
+    face_name           TEXT
 );
+
+
+
 
 CREATE TABLE IF NOT EXISTS deck_cards
 (
     id       INTEGER PRIMARY KEY,
     deck_id  INTEGER NOT NULL,
-    card_id  INTEGER NOT NULL,
+    card_id  TEXT NOT NULL, 
     quantity INTEGER NOT NULL,
     FOREIGN KEY (deck_id) REFERENCES decks (id) ON DELETE CASCADE,
     FOREIGN KEY (card_id) REFERENCES cards (id),
