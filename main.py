@@ -392,6 +392,16 @@ def find_matching_decks(cursor, current_cards: list[dict]) -> list[dict]:
     return cards
 
 
+def calculate_mana_cost_value(mana_cost: str) -> int:
+    value = 0
+    for char in mana_cost:
+        # get the value inside {} bracket and count as one
+        if char == '{' and not mana_cost[mana_cost.index(char) + 1].isdigit():
+            value += 1
+        if char.isdigit():
+            value += int(char)
+    return value
+
 def enrich_decks_with_cards(cursor, decks: list[dict], card_count_map: dict[str, int]):
     for deck in decks:
         deck_cards_query = """
@@ -405,6 +415,10 @@ def enrich_decks_with_cards(cursor, decks: list[dict], card_count_map: dict[str,
         deck['cards'] = [dict(row) for row in cursor.fetchall()]
         deck['cards'] = [card for card in deck['cards'] if card['component'] != "combo_piece"]
         
+        # calculate mana_cost_value
+        for card in deck['cards']:
+            card['mana_cost_value'] = calculate_mana_cost_value(card['mana_cost'])
+
         # use parse_card_types to get the super, type, and sub types
         for card in deck['cards']:
             card['super_types'], card['types'], card['sub_types'] = parse_card_types(card['type_line'])
@@ -459,6 +473,7 @@ def parse_card_types(card_type: str) -> Tuple[List[str], str, List[str]]:
 
     # return types as string 
     return super_types, " ".join(types), sub_types
+
 
 async def build_untapped_decks_api_urls(deck_urls: list):
     base_api_url = "https://api.mtga.untapped.gg/api/v1/decks/pricing/cardkingdom/"

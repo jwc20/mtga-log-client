@@ -176,7 +176,7 @@
                             <div class="type-group">
                                 <div class="type-header">{{ type }}</div>
                                 <ul class="deck-cards-list">
-                                    {% for card in type_cards|sort(attribute='current_count', reverse=true) %}
+                                    {% for card in type_cards|sort(attribute='mana_cost_value', reverse=true) %}
                                         <li>
                                             <span>({{ card.current_count }} /</span>
                                             <span>{{ card.quantity }})</span>
@@ -196,29 +196,29 @@
                             </div>
                         {% endfor %}
 
-                        {% if cards_without_types %}
-                            <div class="type-group">
-                                <div class="type-header">Unknown</div>
-                                <ul class="deck-cards-list">
-                                    {% for card in cards_without_types|sort(attribute='current_count', reverse=true) %}
-                                        <li>
-                                            <span>({{ card.current_count }} /</span>
-                                            <span>{{ card.quantity }})</span>
-                                            <span class="card-hover">
-                                    {{ card.name }}:
-                                                {% if card.id %}
-                                                    <img class="card-image"
-                                                         src="https://cards.scryfall.io/large/front/{{ card.id[0] }}/{{ card.id[1] }}/{{ card.id }}.jpg"
-                                                         alt="{{ card.name }}">
-                                                {% endif %}
-                                </span>
-                                            <span style="font-size: 0.6rem; color: whitesmoke; font-weight: bold">{{ card.types }} </span>
-                                            <span style="font-size: 0.6rem; color: #666;"><{{ card.mana_cost }}></span>
-                                        </li>
-                                    {% endfor %}
-                                </ul>
-                            </div>
-                        {% endif %}
+{#                        {% if cards_without_types %}#}
+{#                            <div class="type-group">#}
+{#                                <div class="type-header">Unknown</div>#}
+{#                                <ul class="deck-cards-list">#}
+{#                                    {% for card in cards_without_types|sort(attribute='current_count', reverse=true) %}#}
+{#                                        <li>#}
+{#                                            <span>({{ card.current_count }} /</span>#}
+{#                                            <span>{{ card.quantity }})</span>#}
+{#                                            <span class="card-hover">#}
+{#                                    {{ card.name }}:#}
+{#                                                {% if card.id %}#}
+{#                                                    <img class="card-image"#}
+{#                                                         src="https://cards.scryfall.io/large/front/{{ card.id[0] }}/{{ card.id[1] }}/{{ card.id }}.jpg"#}
+{#                                                         alt="{{ card.name }}">#}
+{#                                                {% endif %}#}
+{#                                </span>#}
+{#                                            <span style="font-size: 0.6rem; color: whitesmoke; font-weight: bold">{{ card.types }} </span>#}
+{#                                            <span style="font-size: 0.6rem; color: #666;"><{{ card.mana_cost }}></span>#}
+{#                                        </li>#}
+{#                                    {% endfor %}#}
+{#                                </ul>#}
+{#                            </div>#}
+{#                        {% endif %}#}
                     </div>
                 {% endfor %}
             </div>
