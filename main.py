@@ -125,7 +125,6 @@ async def add_logging_middleware(request: Request, call_next):
     return response
 
 
-
 import re
 from dataclasses import dataclass
 
@@ -224,6 +223,8 @@ def enrich_cards_with_playability(cards: list[dict], opponent_mana: ManaPool) ->
 def enrich_decks_with_playability(decks: list[dict], opponent_mana: ManaPool) -> None:
     for deck in decks:
         enrich_cards_with_playability(deck.get("cards", []), opponent_mana)
+
+
 ##############################################################################
 # Routes #####################################################################
 ##############################################################################
@@ -284,7 +285,7 @@ async def check_logs_stream(request: Request):
                     else:
                         current_deck_cards = []
                         matching_decks = []
-                        
+
                     # get opponent mana from current_deck_cards lands using produced_mana, mana can be gained only one
                     lands_dict = {}
                     for card in current_deck_cards:
@@ -292,13 +293,12 @@ async def check_logs_stream(request: Request):
                             if card['produced_mana']:
                                 for color in card['produced_mana'].split(','):
                                     lands_dict[color] = 1
-                    
+
                     opponent_mana = ManaPool(**lands_dict)
-                    
+
                     # opponent_mana = ManaPool(W=2, U=1, B=0, R=0, G=1, C=1)
 
                     enrich_decks_with_playability(matching_decks, opponent_mana)
-
 
                     html_content = templates.get_template("list_cards.html").render(
                         cards=current_deck_cards,
@@ -462,12 +462,12 @@ def fetch_current_deck_cards(cursor, arena_ids: list[str]) -> tuple[list[dict], 
                 card["flavor_name"] = result["flavor_name"]
                 card["produced_mana"] = result["produced_mana"]
                 card["arena_id"] = result["arena_id"]
-        
+
             missing_ids = list(set(missing_ids) - set([card["arena_id"] for card in missing_cards]))
-        
+
         if missing_ids:
             print(f"Missing {len(missing_ids)} cards: {missing_ids}")
-        
+
         cards.extend(missing_cards)
 
     id_counts = Counter(arena_ids)
@@ -510,30 +510,31 @@ def find_matching_decks(cursor, current_cards: list[dict]) -> list[dict]:
         WHERE c.name IN ({placeholders}) 
         GROUP BY d.id
         ORDER BY matched_cards DESC
+        limit 3
     """
     cursor.execute(query_2, unique_card_names)
     cards = [dict(row) for row in cursor.fetchall()]
-    
-    # if len(cards) == 0:
-    query_2 = f"""
-    SELECT DISTINCT d.id,
-                    d.name,
-                    d.source,
-                    d.url,
-                    COUNT(DISTINCT dc.name)                                as matched_cards,
-                    (SELECT COUNT(*) FROM deck_cards WHERE deck_id = d.id) as total_deck_cards
-    FROM decks d
-             inner JOIN deck_cards dc ON d.id = dc.deck_id
-             inner JOIN scryfall_all_cards c ON dc.name = c.name
-    WHERE c.name IN ({placeholders}) and d.format = 'standard' and total_deck_cards <= 100 and source in ('17lands.com', 'mtgazone.com')
-    GROUP BY d.id
-    ORDER BY matched_cards DESC
-    limit 10
-    """
-    cursor.execute(query_2, unique_card_names)
-    # cards = [dict(row) for row in cursor.fetchall()]
-    cards.extend([dict(row) for row in cursor.fetchall()])
-    
+
+    if len(cards) < 3:
+        query_2 = f"""
+        SELECT DISTINCT d.id,
+                        d.name,
+                        d.source,
+                        d.url,
+                        COUNT(DISTINCT dc.name)                                as matched_cards,
+                        (SELECT COUNT(*) FROM deck_cards WHERE deck_id = d.id) as total_deck_cards
+        FROM decks d
+                 inner JOIN deck_cards dc ON d.id = dc.deck_id
+                 inner JOIN scryfall_all_cards c ON dc.name = c.name
+        WHERE c.name IN ({placeholders}) and d.format = 'standard' and total_deck_cards <= 100 and source in ('17lands.com', 'mtgazone.com')
+        GROUP BY d.id
+        ORDER BY matched_cards DESC
+        limit 3
+        """
+        cursor.execute(query_2, unique_card_names)
+        # cards = [dict(row) for row in cursor.fetchall()]
+        cards.extend([dict(row) for row in cursor.fetchall()])
+
     # cards = [card for card in cards if card["component"] != "combo_piece"]
     return cards
 
@@ -543,7 +544,7 @@ def calculate_mana_cost_value(mana_cost: str) -> tuple[int, str]:
     mana_tags = ""
     if not mana_cost:
         return value, mana_tags
-    
+
     # for char in mana_cost:
     #     # get the value inside {} bracket and count as one
     #     if char == '{' and not mana_cost[mana_cost.index(char) + 1].isdigit():
@@ -559,8 +560,7 @@ def calculate_mana_cost_value(mana_cost: str) -> tuple[int, str]:
         if mana_cost[i].isdigit():
             value += int(mana_cost[i])
             mana_tags += '<i class="ms ms-' + mana_cost[i].lower() + ' ms-cost ms-shadow"></i> '
-            
-            
+
     return value, mana_tags.strip()
 
 
@@ -576,7 +576,7 @@ def enrich_decks_with_cards(cursor, decks: list[dict], card_count_map: dict[str,
         cursor.execute(deck_cards_query, (deck['id'],))
         deck['cards'] = [dict(row) for row in cursor.fetchall()]
         deck['cards'] = [card for card in deck['cards'] if card['component'] != "combo_piece"]
-        
+
         if len(deck["cards"]) == 0:
             deck_cards_query = """
                 SELECT c.name, dc.quantity, c.mana_cost, c.type_line, c.arena_id, c.id, c.component
@@ -589,7 +589,7 @@ def enrich_decks_with_cards(cursor, decks: list[dict], card_count_map: dict[str,
             cursor.execute(deck_cards_query, (deck['id'],))
             deck['cards'] = [dict(row) for row in cursor.fetchall()]
             deck['cards'] = [card for card in deck['cards'] if card['component'] != "combo_piece"]
-    
+
         # calculate mana_cost_value
         for card in deck['cards']:
             card['mana_cost_value'], card['mana_cost_tags'] = calculate_mana_cost_value(card['mana_cost'])
