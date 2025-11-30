@@ -1223,7 +1223,7 @@ class Follower:
                 "service_metadata": self.game_service_metadata,
                 "client_metadata": self.game_client_metadata,
             }
-            logger.info(f"Completed game: {game["event_name"]} - {game["match_id"]}")
+            # logger.info(f"Completed game: {game["event_name"]} - {game["match_id"]}")
 
             # logger.info(f"Adding game history ({len(self.game_history_events)} events)")
             game["history"] = {

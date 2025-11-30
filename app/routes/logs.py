@@ -75,13 +75,39 @@ async def check_logs_stream(request: Request):
                         matching_decks = []
                         missing_ids = []
 
+                    ######################################################################
+                    # TODO:
+                    # need to improve mana calculation
+                    #
+                    # card[i] = {
+                    #     'arena_id': '89210',
+                    #     'count': 2,
+                    #     'flavor_name': None,
+                    #     'id': 'de754d20-5371-456b-9064-8f0687d2eab7',
+                    #     'mana_cost': '',
+                    #     'mana_cost_tags': '',
+                    #     'mana_cost_value': 0,
+                    #     'name': 'Mountain',
+                    #     'printed_name': None,
+                    #     'produced_mana': 'R',
+                    #     'sub_types': [
+                    #         'Mountain'
+                    #     ],
+                    #     'super_types': [
+                    #         'Basic'
+                    #     ],
+                    #     'type_line': 'Basic Land — Mountain',
+                    #     'types': 'Land'
+                    # },
+                    #
                     lands_dict = {}
                     for card in current_deck_cards:
                         if card['types'] == 'Land':
                             if card['produced_mana']:
                                 for color in card['produced_mana'].split(','):
                                     lands_dict[color] = 1
-
+                    ######################################################################
+                    
                     opponent_mana = ManaPool(**lands_dict)
 
                     enrich_decks_with_playability(matching_decks, opponent_mana)
