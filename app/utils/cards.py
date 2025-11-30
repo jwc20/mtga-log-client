@@ -1,0 +1,61 @@
+from typing import Tuple, List, Set
+
+MULTI_WORD_SUB_TYPES: Set[str] = {"Time Lord"}
+SUPER_TYPES: Set[str] = {"Basic", "Host", "Legendary", "Ongoing", "Snow", "World"}
+
+
+def parse_card_types(card_type: str) -> Tuple[List[str], str, List[str]]:
+    if not card_type:
+        return [], "", []
+    sub_types: List[str] = []
+    super_types: List[str] = []
+    types: List[str] = []
+
+    supertypes_and_types: str
+    if "—" not in card_type:
+        supertypes_and_types = card_type
+    else:
+        split_type: List[str] = card_type.split("—")
+        supertypes_and_types = split_type[0]
+        subtypes: str = split_type[1]
+
+        if card_type.startswith("Plane"):
+            sub_types = [subtypes.strip()]
+        else:
+            special_case_found = False
+            for special_case in MULTI_WORD_SUB_TYPES:
+                if special_case in subtypes:
+                    subtypes = subtypes.replace(
+                        special_case, special_case.replace(" ", "!")
+                    )
+                    special_case_found = True
+
+            sub_types = [x.strip() for x in subtypes.split() if x]
+            if special_case_found:
+                for i, sub_type in enumerate(sub_types):
+                    sub_types[i] = sub_type.replace("!", " ")
+
+    for value in supertypes_and_types.split():
+        if value in SUPER_TYPES:
+            super_types.append(value)
+        elif value:
+            types.append(value)
+
+    return super_types, " ".join(types), sub_types
+
+
+def calculate_mana_cost_value(mana_cost: str) -> tuple[int, str]:
+    value = 0
+    mana_tags = ""
+    if not mana_cost:
+        return value, mana_tags
+
+    for i in range(len(mana_cost)):
+        if mana_cost[i] == '{' and not mana_cost[i + 1].isdigit():
+            value += 1
+            mana_tags += '<i class="ms ms-' + mana_cost[i + 1].lower() + ' ms-cost ms-shadow"></i> '
+        if mana_cost[i].isdigit():
+            value += int(mana_cost[i])
+            mana_tags += '<i class="ms ms-' + mana_cost[i].lower() + ' ms-cost ms-shadow"></i> '
+
+    return value, mana_tags.strip()
