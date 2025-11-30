@@ -1,8 +1,20 @@
 <style>
+    .ms-cost {
+        line-height: 0.2rem;
+    }
+
+    .deck-name {
+        font-size: 0.8rem;
+    }
+
+    .mana-cost {
+        display: contents;
+    }
+
     ul li {
         list-style: none;
         margin: 0;
-        padding: 0;
+        padding-bottom: 0.2rem;
     }
 
     .card-hover {
@@ -90,25 +102,21 @@
         flex-grow: 1;
     }
 
-    .deck-cards-list li > span:nth-child(4) {
-        width: 6rem;
-    }
 
     .deck-cards-list li > span:nth-child(5) {
         width: 10rem;
     }
 
     .type-group {
-        margin-bottom: 0.75rem;
+        margin-top: 0.75rem;
     }
 
     .type-header {
-        font-size: 0.7rem;
+        font-size: 0.5rem;
         font-weight: bold;
         color: #888;
         border-bottom: 1px solid #444;
         margin-bottom: 0.25rem;
-        padding-bottom: 0.1rem;
     }
 
     .grid {
@@ -128,31 +136,60 @@
         }
     }
 
+    .card-playable {
+        color: #4ade80;
+        font-weight: bold;
+    }
+
+    .card-played {
+        text-decoration: line-through;
+    }
+
+    .card-played-indicator {
+        display: inline-block;
+        margin-left: 0.25rem;
+        color: #f59e0b;
+        font-weight: bold;
+    }
+
 </style>
 
 <div class="card-list">
     <section>
         <h5>Opponent's Cards</h5>
-        <ul class="cards-list">
-            {% for card in cards %}
-                <li>
-                    <span>({{ card.count }})</span>
-                    <span class="card-hover">
-                    {% if card.printed_name %}
-                        {{ card.printed_name }}
-                    {% else %}
-                        {{ card.name }}
-                    {% endif %}
-                        {% if card.id %}
-                            <img class="card-image"
-                                 src="https://cards.scryfall.io/large/front/{{ card.id[0] }}/{{ card.id[1] }}/{{ card.id }}.jpg"
-                                 alt="{{ card.name }}">
-                        {% endif %}
-                </span>
-                    <span style="font-size: 0.6rem; color: #666"><{{ card.mana_cost }}></span>
-                </li>
-            {% endfor %}
-        </ul>
+        {% set cards_with_types = cards|selectattr('types')|list %}
+        {% for type, type_cards in cards_with_types|groupby('types') %}
+            <div class="type-group">
+                <div class="type-header">{{ type|title }}</div>
+                <ul class="cards-list">
+                    {% for card in type_cards|sort(attribute='name') %}
+                        <li>
+                            <span class="card-hover">
+                                {% if card.printed_name %}
+                                    {{ card.printed_name }}
+                                {% else %}
+                                    {{ card.name }}
+                                {% endif %}
+                                {% if card.id %}
+                                    <img class="card-image"
+                                         src="https://cards.scryfall.io/large/front/{{ card.id[0] }}/{{ card.id[1] }}/{{ card.id }}.jpg"
+                                         alt="{{ card.name }}">
+                                {% endif %}
+                            </span>
+                            <div class="mana-cost">
+                                {{ card.mana_cost_tags | safe }}
+                            </div>
+
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endfor %}
+        {% if missing_ids %}
+            <div class="missing-cards">
+                <span>Missing Cards: {{ missing_ids }}</span>
+            </div>
+        {% endif %}
     </section>
 
     <section>
@@ -160,65 +197,40 @@
             <div class="grid">
                 {% for deck in matching_decks %}
                     <div>
-                        <a style="font-size: 1rem;" href="{{ deck['url'] }}" target="_blank">{{ deck.name }}</a>
-                        <span>  ({{ deck.matched_cards }} / {{ deck.total_deck_cards }})</span>
-
-{#                        <ul style="display: flex; flex-wrap: wrap; margin-top: 0.5rem; margin-left: 0; padding-left: 0;">#}
-{#                            {% for type, count in deck.type_counts.items() %}#}
-{#                                <li style="margin-right: 0.5rem;">{{ type }}: {{ count }}</li>#}
-{#                            {% endfor %}#}
-{#                        </ul>#}
+                        <div>
+                            <a class="deck-name" href="{{ deck['url'] }}" target="_blank">{{ deck.name }}</a>
+                            <span>  ({{ deck.matched_cards }} / {{ deck.total_deck_cards }})</span>
+                        </div>
 
                         {% set cards_with_types = deck.cards|selectattr('types')|list %}
-                        {% set cards_without_types = deck.cards|rejectattr('types')|list %}
 
                         {% for type, type_cards in cards_with_types|groupby('types') %}
                             <div class="type-group">
                                 <div class="type-header">{{ type }}</div>
                                 <ul class="deck-cards-list">
                                     {% for card in type_cards|sort(attribute='mana_cost_value', reverse=true) %}
+                                        {% set is_played = card.current_count is defined and card.current_count > 0 %}
                                         <li>
                                             <span>({{ card.current_count }} /</span>
                                             <span>{{ card.quantity }})</span>
-                                            <span class="card-hover">
-                                    {{ card.name }}:
+                                            <span class="card-hover{% if card.is_playable %} card-playable{% endif %}{% if is_played %} card-played{% endif %}">
+                                                {{ card.name }}
                                                 {% if card.id %}
                                                     <img class="card-image"
                                                          src="https://cards.scryfall.io/large/front/{{ card.id[0] }}/{{ card.id[1] }}/{{ card.id }}.jpg"
                                                          alt="{{ card.name }}">
                                                 {% endif %}
-                                </span>
-                                            <span style="font-size: 0.6rem; color: whitesmoke; font-weight: bold">{{ card.types }} </span>
-                                            <span style="font-size: 0.6rem; color: #666;"><{{ card.mana_cost }}></span>
+                                            </span>
+                                            {% if is_played %}<span class="card-played-indicator">✓</span>{% endif %}
+                                            <div class="mana-cost">
+                                                <span>{{ card.mana_cost_tags | safe }}</span>
+                                            </div>
+
                                         </li>
                                     {% endfor %}
                                 </ul>
                             </div>
                         {% endfor %}
-
-{#                        {% if cards_without_types %}#}
-{#                            <div class="type-group">#}
-{#                                <div class="type-header">Unknown</div>#}
-{#                                <ul class="deck-cards-list">#}
-{#                                    {% for card in cards_without_types|sort(attribute='current_count', reverse=true) %}#}
-{#                                        <li>#}
-{#                                            <span>({{ card.current_count }} /</span>#}
-{#                                            <span>{{ card.quantity }})</span>#}
-{#                                            <span class="card-hover">#}
-{#                                    {{ card.name }}:#}
-{#                                                {% if card.id %}#}
-{#                                                    <img class="card-image"#}
-{#                                                         src="https://cards.scryfall.io/large/front/{{ card.id[0] }}/{{ card.id[1] }}/{{ card.id }}.jpg"#}
-{#                                                         alt="{{ card.name }}">#}
-{#                                                {% endif %}#}
-{#                                </span>#}
-{#                                            <span style="font-size: 0.6rem; color: whitesmoke; font-weight: bold">{{ card.types }} </span>#}
-{#                                            <span style="font-size: 0.6rem; color: #666;"><{{ card.mana_cost }}></span>#}
-{#                                        </li>#}
-{#                                    {% endfor %}#}
-{#                                </ul>#}
-{#                            </div>#}
-{#                        {% endif %}#}
                     </div>
                 {% endfor %}
             </div>

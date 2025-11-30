@@ -125,6 +125,105 @@ async def add_logging_middleware(request: Request, call_next):
     return response
 
 
+
+import re
+from dataclasses import dataclass
+
+
+@dataclass
+class ManaPool:
+    W: int = 0
+    U: int = 0
+    B: int = 0
+    R: int = 0
+    G: int = 0
+    C: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.W + self.U + self.B + self.R + self.G + self.C
+
+    def can_pay(self, cost: "ManaCost") -> bool:
+        remaining = self.total
+
+        for color in ["W", "U", "B", "R", "G"]:
+            required = getattr(cost, color)
+            available = getattr(self, color)
+            if available < required:
+                return False
+            remaining -= required
+
+        if self.C < cost.C:
+            return False
+        remaining -= cost.C
+
+        return remaining >= cost.generic
+
+
+@dataclass
+class ManaCost:
+    W: int = 0
+    U: int = 0
+    B: int = 0
+    R: int = 0
+    G: int = 0
+    C: int = 0
+    generic: int = 0
+
+    @classmethod
+    def from_string(cls, mana_cost: str) -> "ManaCost":
+        if not mana_cost:
+            return cls()
+
+        cost = cls()
+        symbols = re.findall(r"\{([^}]+)}", mana_cost)
+
+        for symbol in symbols:
+            if symbol.isdigit():
+                cost.generic += int(symbol)
+            elif symbol == "W":
+                cost.W += 1
+            elif symbol == "U":
+                cost.U += 1
+            elif symbol == "B":
+                cost.B += 1
+            elif symbol == "R":
+                cost.R += 1
+            elif symbol == "G":
+                cost.G += 1
+            elif symbol == "C":
+                cost.C += 1
+            elif symbol == "X":
+                pass
+            elif "/" in symbol:
+                colors = symbol.split("/")
+                if "P" in colors:
+                    color = [c for c in colors if c != "P"][0]
+                    setattr(cost, color, getattr(cost, color) + 1)
+                else:
+                    # setattr(cost, colors[0], getattr(cost, colors[0]) + 1)
+                    # if its a number, then it is a generic cost
+                    if colors[0].isdigit():
+                        cost.generic += int(colors[0])
+                    else:
+                        setattr(cost, colors[0], getattr(cost, colors[0]) + 1)
+
+        return cost
+
+
+def is_card_playable(card_mana_cost: str, opponent_mana: ManaPool) -> bool:
+    cost = ManaCost.from_string(card_mana_cost)
+    return opponent_mana.can_pay(cost)
+
+
+def enrich_cards_with_playability(cards: list[dict], opponent_mana: ManaPool) -> None:
+    for card in cards:
+        card["is_playable"] = is_card_playable(card.get("mana_cost", ""), opponent_mana)
+
+
+def enrich_decks_with_playability(decks: list[dict], opponent_mana: ManaPool) -> None:
+    for deck in decks:
+        enrich_cards_with_playability(deck.get("cards", []), opponent_mana)
 ##############################################################################
 # Routes #####################################################################
 ##############################################################################
@@ -169,7 +268,7 @@ async def check_logs_stream(request: Request):
                     arena_ids = parse_arena_ids_from_log(last_log_entry)
 
                     if arena_ids:
-                        current_deck_cards = fetch_current_deck_cards(cursor, arena_ids)
+                        current_deck_cards, missing_ids = fetch_current_deck_cards(cursor, arena_ids)
                         card_count_by_name = build_card_count_map(arena_ids, current_deck_cards)
                         matching_decks = find_matching_decks(cursor, current_deck_cards)
                         enrich_decks_with_cards(cursor, matching_decks, card_count_by_name)
@@ -185,10 +284,27 @@ async def check_logs_stream(request: Request):
                     else:
                         current_deck_cards = []
                         matching_decks = []
+                        
+                    # get opponent mana from current_deck_cards lands using produced_mana, mana can be gained only one
+                    lands_dict = {}
+                    for card in current_deck_cards:
+                        if card['types'] == 'Land':
+                            if card['produced_mana']:
+                                for color in card['produced_mana'].split(','):
+                                    lands_dict[color] = 1
+                    
+                    opponent_mana = ManaPool(**lands_dict)
+                    
+                    # opponent_mana = ManaPool(W=2, U=1, B=0, R=0, G=1, C=1)
+
+                    enrich_decks_with_playability(matching_decks, opponent_mana)
+
 
                     html_content = templates.get_template("list_cards.html").render(
                         cards=current_deck_cards,
-                        matching_decks=matching_decks
+                        matching_decks=matching_decks,
+                        opponent_mana=opponent_mana,
+                        missing_ids=missing_ids
                     )
 
                     yield {
@@ -300,13 +416,13 @@ def parse_arena_ids_from_log(log_entry: str) -> list[str]:
         return []
 
 
-def fetch_current_deck_cards(cursor, arena_ids: list[str]) -> list[dict]:
+def fetch_current_deck_cards(cursor, arena_ids: list[str]) -> tuple[list[dict], list[str]]:
     if not arena_ids:
-        return []
+        return [], []
 
     placeholders = ", ".join("?" * len(arena_ids))
     query = f"""
-        SELECT DISTINCT name, mana_cost, type_line, arena_id, id, printed_name, flavor_name
+        SELECT DISTINCT name, mana_cost, type_line, arena_id, id, printed_name, flavor_name, produced_mana
         FROM scryfall_all_cards 
         WHERE arena_id IN ({placeholders})
     """
@@ -319,8 +435,7 @@ def fetch_current_deck_cards(cursor, arena_ids: list[str]) -> list[dict]:
     missing_ids = list(set(arena_ids) - set(found_ids))
 
     if missing_ids:
-        missing_cards = []
-        print(f"Missing {len(missing_ids)} cards: {missing_ids}")
+        # print(f"Missing {len(missing_ids)} cards: {missing_ids}")
         _placeholders = ", ".join("?" * len(missing_ids))
         _query = f"""
             SELECT DISTINCT name, CAST(id as VARCHAR(20)) as arena_id FROM '17lands'
@@ -330,11 +445,11 @@ def fetch_current_deck_cards(cursor, arena_ids: list[str]) -> list[dict]:
         missing_cards = [dict(row) for row in cursor.fetchall()]
 
         for card in missing_cards:
-            __query = "SELECT name, mana_cost, type_line, id, printed_name, flavor_name FROM scryfall_all_cards WHERE name = ? LIMIT 1"
+            __query = "SELECT name, mana_cost, type_line, arena_id, id, printed_name, flavor_name, produced_mana FROM scryfall_all_cards WHERE name = ? LIMIT 1"
             cursor.execute(__query, (card["name"],))
             result = cursor.fetchone()
             if not result:
-                __query = "SELECT name, mana_cost, type_line, id, printed_name, flavor_name FROM scryfall_all_cards WHERE printed_name = ? OR flavor_name = ? LIMIT 1"
+                __query = "SELECT name, mana_cost, type_line, arena_id, id, printed_name, flavor_name, produced_mana FROM scryfall_all_cards WHERE printed_name = ? OR flavor_name = ? LIMIT 1"
                 cursor.execute(__query, (card["name"], card["name"]))
                 result = cursor.fetchone()
 
@@ -345,14 +460,23 @@ def fetch_current_deck_cards(cursor, arena_ids: list[str]) -> list[dict]:
                 card["id"] = result["id"]
                 card["printed_name"] = result["printed_name"]
                 card["flavor_name"] = result["flavor_name"]
-
+                card["produced_mana"] = result["produced_mana"]
+                card["arena_id"] = result["arena_id"]
+        
+            missing_ids = list(set(missing_ids) - set([card["arena_id"] for card in missing_cards]))
+        
+        if missing_ids:
+            print(f"Missing {len(missing_ids)} cards: {missing_ids}")
+        
         cards.extend(missing_cards)
 
     id_counts = Counter(arena_ids)
     for card in cards:
         card["count"] = id_counts.get(card["arena_id"], 0)
+        card['super_types'], card['types'], card['sub_types'] = parse_card_types(card['type_line'])
+        card['mana_cost_value'], card['mana_cost_tags'] = calculate_mana_cost_value(card['mana_cost'])
 
-    return cards
+    return cards, missing_ids
 
 
 def build_card_count_map(arena_ids: list[str], cards: list[dict]) -> dict[str, int]:
@@ -414,18 +538,30 @@ def find_matching_decks(cursor, current_cards: list[dict]) -> list[dict]:
     return cards
 
 
-def calculate_mana_cost_value(mana_cost: str) -> int:
+def calculate_mana_cost_value(mana_cost: str) -> tuple[int, str]:
     value = 0
+    mana_tags = ""
     if not mana_cost:
-        return value
+        return value, mana_tags
     
-    for char in mana_cost:
-        # get the value inside {} bracket and count as one
-        if char == '{' and not mana_cost[mana_cost.index(char) + 1].isdigit():
+    # for char in mana_cost:
+    #     # get the value inside {} bracket and count as one
+    #     if char == '{' and not mana_cost[mana_cost.index(char) + 1].isdigit():
+    #         value += 1
+    #         class_name += "ms-" + mana_cost[mana_cost.index(char) + 1].lower() + " "
+    #     if char.isdigit():
+    #         value += int(char)
+    #         class_name += "ms-" + char.lower() + " "
+    for i in range(len(mana_cost)):
+        if mana_cost[i] == '{' and not mana_cost[i + 1].isdigit():
             value += 1
-        if char.isdigit():
-            value += int(char)
-    return value
+            mana_tags += '<i class="ms ms-' + mana_cost[i + 1].lower() + ' ms-cost ms-shadow"></i> '
+        if mana_cost[i].isdigit():
+            value += int(mana_cost[i])
+            mana_tags += '<i class="ms ms-' + mana_cost[i].lower() + ' ms-cost ms-shadow"></i> '
+            
+            
+    return value, mana_tags.strip()
 
 
 def enrich_decks_with_cards(cursor, decks: list[dict], card_count_map: dict[str, int]):
@@ -456,7 +592,7 @@ def enrich_decks_with_cards(cursor, decks: list[dict], card_count_map: dict[str,
     
         # calculate mana_cost_value
         for card in deck['cards']:
-            card['mana_cost_value'] = calculate_mana_cost_value(card['mana_cost'])
+            card['mana_cost_value'], card['mana_cost_tags'] = calculate_mana_cost_value(card['mana_cost'])
 
         # use parse_card_types to get the super, type, and sub types
         for card in deck['cards']:

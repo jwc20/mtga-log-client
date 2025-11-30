@@ -60,6 +60,7 @@ class CoreCard:
     face_name: str | None = None
     # cmc: float | None = None
     image_uri_large: str | None = None
+    produced_mana: list[str] | None = None
 
 
 @dataclass
@@ -150,7 +151,7 @@ def get_all_arena_cards(all_cards: str) -> list[CoreCard]:
                resource_id, oracle_id, name, printed_name, printed_type_line,
                printed_text, flavor_name, layout, color_identity, colors,
                booster, rarity, mana_cost, type_line, variation, games,
-               promo_types, illustration_id, uri, keywords, oracle_text, image_uris
+               promo_types, illustration_id, uri, keywords, oracle_text, image_uris, produced_mana 
         FROM '{all_cards}'
         WHERE 'arena' IN games AND lang = 'en'
     """).fetchdf()
@@ -183,7 +184,8 @@ def get_all_arena_cards(all_cards: str) -> list[CoreCard]:
             printed_name=get_value(df, i, "printed_name"),
             printed_type_line=get_value(df, i, "printed_type_line"),
             printed_text=get_value(df, i, "printed_text"),
-            image_uri_large=get_value(df, i, "image_uris.large")
+            image_uri_large=get_value(df, i, "image_uris.large"),
+            produced_mana=get_value(df, i, "produced_mana")
         )
         result.append(card)
 
@@ -266,38 +268,8 @@ ALL_FIELDS = [
     "power", "toughness", "flavor_text", "artist", "artist_id", "image_uri_large",
     "printed_name", "printed_type_line", "printed_text", "color_indicator",
     "watermark", "defense", "loyalty", "flavor_name", "card_type",
-    "printed_flavor_text", "face_name",
+    "printed_flavor_text", "face_name", "produced_mana",
 ]
-
-
-# def flatten_dataclass(obj) -> dict:
-#     result = {field: None for field in ALL_FIELDS}
-#     for field in fields(obj):
-#         value = getattr(obj, field.name)
-#         if isinstance(value, uuid.UUID):
-#             value = str(value)
-#         result[field.name] = value
-#     return result
-# 
-# 
-# def main():
-#     all_cards = str(scryfall_allcards_json_file_path)
-#     duckdb.read_json(all_cards)
-# 
-#     all_arena_cards = get_all_arena_cards(all_cards)
-#     all_parts_cards = get_all_parts_cards(all_cards)
-#     all_card_faces = get_all_card_faces(all_cards)
-# 
-#     output_data = [
-#         flatten_dataclass(card)
-#         for card in (*all_arena_cards, *all_parts_cards, *all_card_faces)
-#     ]
-# 
-#     with open(output_dir / "new_all_cards.json", "w", encoding="utf-8") as f:
-#         json_str = jsonpickle.encode(output_data, unpicklable=False)
-#         f.write(json_str)
-# 
-#     print(f"Wrote new_all_cards.json with {len(output_data)} cards")
 
 
 def flatten_dataclass(obj) -> dict:
