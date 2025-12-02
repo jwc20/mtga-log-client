@@ -33,6 +33,10 @@ async def check_logs_stream(request: Request):
     async def event_generator():
         cursor = conn.cursor()
 
+        ##########################################################################################
+        # TODO
+        ##########################################################################################
+        ##########################################################################################
         try:
             log_entry = LogEntry()
             arena_ids = log_entry.arena_ids
@@ -107,7 +111,10 @@ async def check_logs_stream(request: Request):
                                 opponent_mana_actions[action.get("abilityGrpId")] = opponent_mana_actions.get(action.get("abilityGrpId"), 0) + 1
                             else:
                                 print(action)
-    
+
+                    ##########################################################################################
+                    ##########################################################################################
+                    # TODO
                     lands_dict = {}
                     for card in current_deck_cards:
                         if card['types'] == 'Land':
@@ -131,6 +138,9 @@ async def check_logs_stream(request: Request):
                             opponent_mana_dict["G"] = count
                             
                     opponent_mana_2 = ManaPool(**opponent_mana_dict)
+
+                    ##########################################################################################
+                    ##########################################################################################
                     
                     enrich_decks_with_playability(matching_decks, opponent_mana_2)
     
