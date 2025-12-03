@@ -847,6 +847,7 @@ class Follower:
                     if game_object["type"] not in (
                             "GameObjectType_Card",
                             "GameObjectType_SplitCard",
+                            "GameStateType_Diff",
                     ):
                         continue
                     owner = game_object["ownerSeatId"]
@@ -885,39 +886,17 @@ class Follower:
                     opponent_seat_id = 2 if player_seat_id == 1 else 1
                     
                     # to see what cards are on the battlfield
-                    if zone["type"] == "ZoneType_Battlefield":
-                        # print(zone)
-                        object_instance_ids = zone.get("objectInstanceIds", [])
-                        player_objects_instance_ids = self.drawn_cards_by_instance_id[player_seat_id].keys()
-                        # set_objects_on_battlefield = set(object_instance_ids)
-                        # set_player = set(player_objects_instance_ids)
-                        # 
-                        # opponent_objects_instance_ids = set_objects_on_battlefield.difference(set_player)
-
-                        opponent_objects_instance_ids = [i for i in object_instance_ids if i not in player_objects_instance_ids]
-                        
+                    if zone["type"] == "ZoneType_Battlefield" or zone["type"] == "ZoneType_Stack":
                         if actions:
-                            for instance_id in opponent_objects_instance_ids:
-                                # _actions = game_state_message.get("actions", [])
-                                for action in actions:
-                                    if action.get("action").get("instanceId") == instance_id and opponent_seat_id == action.get("seatId"):
-                                        # get opponent's actions played
-                                        # types: ActionType_Activate_Mana, ActionType_Activate
-                                        # print(action)
-                                        
-                                        # update opponent actions keep only the unique values, note that action is a dictionary object and Error cannot use 'dict' as a set element (unhashable type: 'dict')
-                                        # cannot use set() to remove duplicates from a list of dictionaries and it is the opponent's seat id
-                                        # self.opponent_actions = list({action.get("action").get("instanceId"): action  for action in actions}.values())
-                                        self.opponent_actions = list({action.get("action").get("instanceId"): action.get("action") for action in actions if opponent_seat_id == action.get("seatId")}.values())
-                            
-                            # print(self.opponent_actions)
-                            # print(f"length: {len(self.opponent_actions)}")
-                            # logger.info(f"::Opponent (Player {opponent_seat_id})::actions: {self.opponent_actions}")
-                        
-                        # if previous_opponent_actions != self.opponent_actions:
-                        #     from operator import itemgetter
-                        #     self.opponent_actions = sorted(self.opponent_actions, key=itemgetter("instanceId"))
-                        #     logger.info(f"::Opponent (Player {opponent_seat_id})::actions: {self.opponent_actions}")
+                            for action in actions:
+                                if opponent_seat_id == action.get("seatId"):
+                                    new_actions = {
+                                        (action.get("action").get("instanceId"),
+                                         action.get("action").get("actionType")): action.get("action")
+                                        for action in actions
+                                        if opponent_seat_id == action.get("seatId")
+                                    }
+                                    self.opponent_actions = list(new_actions.values())
 
               
                     # to see what cards are in the player's hand
@@ -937,8 +916,7 @@ class Follower:
                                     card_id
                                 )
                                 # print(f"player's drawn cards: {self.drawn_cards_by_instance_id}")
-                                
-                                
+
                 if previous_opponent_actions != self.opponent_actions:
                     from operator import itemgetter
                     self.opponent_actions = sorted(self.opponent_actions, key=itemgetter("instanceId"))
