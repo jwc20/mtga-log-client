@@ -1,7 +1,7 @@
+scripts/
 mtg_decks.db
 identifier.sqlite
-database.db
-card_data
+card_data/
 
 _database_20251129.db
 AllPrintings.sqlite
