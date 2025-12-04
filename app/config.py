@@ -26,6 +26,7 @@ db_path = project_root / "database.db"
 schema_path = project_root / "schema.sql"
 template_path = project_root / "app/templates"
 logger_path = project_root / "logs"
+data_path = project_root / "seeds"
 
 
 class DailyFileHandler(logging.FileHandler):
