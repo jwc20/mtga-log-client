@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Form, HTTPException
+from fastapi import APIRouter, Request, Form, HTTPException, UploadFile, File
 from starlette import status
 from starlette.responses import RedirectResponse, Response
 
@@ -61,6 +61,24 @@ async def add_untapped_decks_html_route(
 ):
     try:
         data = await parse_untapped_html(html_doc)
+        await add_decks_by_html(conn, data)
+        cursor = await conn.cursor()
+        decks = await get_decks(cursor)
+        return templates.TemplateResponse(
+            request=request, name="untapped.html", context={"decks": decks}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing decks: {str(e)}")
+
+
+@router.post("/add/upload-decks-html")
+async def add_decks_by_html_route(
+        request: Request,
+        conn: DBConnDep,
+        file: Annotated[UploadFile, File(...)]
+):
+    try:
+        data = await parse_untapped_html(file.file.read().decode("utf-8"))
         await add_decks_by_html(conn, data)
         cursor = await conn.cursor()
         decks = await get_decks(cursor)

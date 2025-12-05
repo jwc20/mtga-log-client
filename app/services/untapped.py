@@ -125,7 +125,7 @@ async def add_decks_by_html(conn: aiosqlite.Connection, data: dict) -> None:
     try:
         session_id = data["cookies"]["session_id"]
         csrf_token = data["cookies"]["csrf_token"]
-        cursor.execute("SELECT id FROM user_info where session_id = ? and csrf_token = ?", (session_id, csrf_token))
+        await cursor.execute("SELECT id FROM user_info where session_id = ? and csrf_token = ?", (session_id, csrf_token))
         user_info = await cursor.fetchone()
 
         if not user_info:
